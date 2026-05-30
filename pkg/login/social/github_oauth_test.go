@@ -1,4 +1,4 @@
-package connectors
+package social
 
 import (
 	"context"
@@ -11,9 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 
-	"github.com/grafana/grafana/pkg/login/social"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
-	"github.com/grafana/grafana/pkg/services/ssosettings/ssosettingstests"
 	"github.com/grafana/grafana/pkg/setting"
 )
 
@@ -126,7 +124,7 @@ func TestSocialGitHub_UserInfo(t *testing.T) {
 		settingSkipOrgRoleSync   bool
 		roleAttributePath        string
 		autoAssignOrgRole        string
-		want                     *social.BasicUserInfo
+		want                     *BasicUserInfo
 		wantErr                  bool
 	}{
 		{
@@ -135,7 +133,7 @@ func TestSocialGitHub_UserInfo(t *testing.T) {
 			userTeamsRawJSON:  testGHUserTeamsJSON,
 			autoAssignOrgRole: "",
 			roleAttributePath: "",
-			want: &social.BasicUserInfo{
+			want: &BasicUserInfo{
 				Id:     "1",
 				Name:   "monalisa octocat",
 				Email:  "octocat@github.com",
@@ -150,7 +148,7 @@ func TestSocialGitHub_UserInfo(t *testing.T) {
 			userRawJSON:       testGHUserJSON,
 			autoAssignOrgRole: "Editor",
 			userTeamsRawJSON:  testGHUserTeamsJSON,
-			want: &social.BasicUserInfo{
+			want: &BasicUserInfo{
 				Id:     "1",
 				Name:   "monalisa octocat",
 				Email:  "octocat@github.com",
@@ -165,7 +163,7 @@ func TestSocialGitHub_UserInfo(t *testing.T) {
 			userRawJSON:       testGHUserJSON,
 			autoAssignOrgRole: "Editor",
 			userTeamsRawJSON:  testGHUserTeamsJSON,
-			want: &social.BasicUserInfo{
+			want: &BasicUserInfo{
 				Id:     "1",
 				Name:   "monalisa octocat",
 				Email:  "octocat@github.com",
@@ -180,7 +178,7 @@ func TestSocialGitHub_UserInfo(t *testing.T) {
 			settingSkipOrgRoleSync: true,
 			userRawJSON:            testGHUserJSON,
 			userTeamsRawJSON:       testGHUserTeamsJSON,
-			want: &social.BasicUserInfo{
+			want: &BasicUserInfo{
 				Id:     "1",
 				Name:   "monalisa octocat",
 				Email:  "octocat@github.com",
@@ -196,7 +194,7 @@ func TestSocialGitHub_UserInfo(t *testing.T) {
 			settingAllowGrafanaAdmin: true,
 			userRawJSON:              testGHUserJSON,
 			userTeamsRawJSON:         testGHUserTeamsJSON,
-			want: &social.BasicUserInfo{
+			want: &BasicUserInfo{
 				Id:             "1",
 				Name:           "monalisa octocat",
 				Email:          "octocat@github.com",
@@ -212,7 +210,7 @@ func TestSocialGitHub_UserInfo(t *testing.T) {
 			userRawJSON:       testGHUserJSON,
 			autoAssignOrgRole: "Editor",
 			userTeamsRawJSON:  testGHUserTeamsJSON,
-			want: &social.BasicUserInfo{
+			want: &BasicUserInfo{
 				Id:     "1",
 				Name:   "monalisa octocat",
 				Email:  "octocat@github.com",
@@ -241,19 +239,16 @@ func TestSocialGitHub_UserInfo(t *testing.T) {
 			}))
 			defer server.Close()
 
-			s := NewGitHubProvider(
-				&social.OAuthInfo{
-					ApiUrl:            server.URL + "/user",
-					RoleAttributePath: tt.roleAttributePath,
-					Extra: map[string]string{
-						"allowed_organizations": "",
-						"team_ids":              "",
-					},
-				}, &setting.Cfg{
-					AutoAssignOrgRole:     tt.autoAssignOrgRole,
-					GitHubSkipOrgRoleSync: tt.settingSkipOrgRoleSync,
-				}, &ssosettingstests.MockService{},
-				featuremgmt.WithFeatures())
+			s, err := NewGitHubProvider(map[string]any{
+				"allowed_organizations": "",
+				"api_url":               server.URL + "/user",
+				"team_ids":              "",
+				"role_attribute_path":   tt.roleAttributePath,
+			}, &setting.Cfg{
+				AutoAssignOrgRole:     tt.autoAssignOrgRole,
+				GitHubSkipOrgRoleSync: tt.settingSkipOrgRoleSync,
+			}, featuremgmt.WithFeatures())
+			require.NoError(t, err)
 
 			token := &oauth2.Token{
 				AccessToken: "fake_token",
@@ -278,15 +273,13 @@ func TestSocialGitHub_InitializeExtraFields(t *testing.T) {
 	}
 	testCases := []struct {
 		name     string
-		settings *social.OAuthInfo
+		settings map[string]any
 		want     settingFields
 	}{
 		{
 			name: "teamIds is set",
-			settings: &social.OAuthInfo{
-				Extra: map[string]string{
-					"team_ids": "1234,5678",
-				},
+			settings: map[string]any{
+				"team_ids": "1234,5678",
 			},
 			want: settingFields{
 				teamIds:              []int{1234, 5678},
@@ -295,10 +288,8 @@ func TestSocialGitHub_InitializeExtraFields(t *testing.T) {
 		},
 		{
 			name: "allowedOrganizations is set",
-			settings: &social.OAuthInfo{
-				Extra: map[string]string{
-					"allowed_organizations": "uuid-1234,uuid-5678",
-				},
+			settings: map[string]any{
+				"allowed_organizations": "uuid-1234,uuid-5678",
 			},
 			want: settingFields{
 				teamIds:              []int{},
@@ -307,11 +298,9 @@ func TestSocialGitHub_InitializeExtraFields(t *testing.T) {
 		},
 		{
 			name: "teamIds and allowedOrganizations are empty",
-			settings: &social.OAuthInfo{
-				Extra: map[string]string{
-					"team_ids":              "",
-					"allowed_organizations": "",
-				},
+			settings: map[string]any{
+				"team_ids":              "",
+				"allowed_organizations": "",
 			},
 			want: settingFields{
 				teamIds:              []int{},
@@ -320,10 +309,8 @@ func TestSocialGitHub_InitializeExtraFields(t *testing.T) {
 		},
 		{
 			name: "should not error when teamIds are not integers",
-			settings: &social.OAuthInfo{
-				Extra: map[string]string{
-					"team_ids": "abc1234,5678",
-				},
+			settings: map[string]any{
+				"team_ids": "abc1234,5678",
 			},
 			want: settingFields{
 				teamIds:              []int{},
@@ -334,7 +321,8 @@ func TestSocialGitHub_InitializeExtraFields(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			s := NewGitHubProvider(tc.settings, &setting.Cfg{}, &ssosettingstests.MockService{}, featuremgmt.WithFeatures())
+			s, err := NewGitHubProvider(tc.settings, &setting.Cfg{}, featuremgmt.WithFeatures())
+			require.NoError(t, err)
 
 			require.Equal(t, tc.want.teamIds, s.teamIds)
 			require.Equal(t, tc.want.allowedOrganizations, s.allowedOrganizations)

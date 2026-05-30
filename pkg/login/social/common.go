@@ -1,4 +1,4 @@
-package connectors
+package social
 
 import (
 	"context"
@@ -8,17 +8,15 @@ import (
 	"io"
 	"net/http"
 	"reflect"
-	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/grafana/grafana/pkg/setting"
+	"github.com/grafana/grafana/pkg/util"
 	"github.com/jmespath/go-jmespath"
 	"github.com/mitchellh/mapstructure"
 	"golang.org/x/oauth2"
-
-	"github.com/grafana/grafana/pkg/login/social"
-	"github.com/grafana/grafana/pkg/setting"
-	"github.com/grafana/grafana/pkg/util"
+	"gopkg.in/ini.v1"
 )
 
 const (
@@ -29,7 +27,7 @@ const (
 )
 
 var (
-	errMissingGroupMembership = &SocialError{"user not a member of one of the required groups"}
+	errMissingGroupMembership = &Error{"user not a member of one of the required groups"}
 )
 
 type httpGetResponse struct {
@@ -149,7 +147,7 @@ func (s *SocialBase) searchJSONForStringArrayAttr(attributePath string, data []b
 	return result, nil
 }
 
-func createOAuthConfig(info *social.OAuthInfo, cfg *setting.Cfg, defaultName string) *oauth2.Config {
+func createOAuthConfig(info *OAuthInfo, cfg *setting.Cfg, defaultName string) *oauth2.Config {
 	var authStyle oauth2.AuthStyle
 	switch strings.ToLower(info.AuthStyle) {
 	case "inparams":
@@ -168,7 +166,7 @@ func createOAuthConfig(info *social.OAuthInfo, cfg *setting.Cfg, defaultName str
 			TokenURL:  info.TokenUrl,
 			AuthStyle: authStyle,
 		},
-		RedirectURL: strings.TrimSuffix(cfg.AppURL, "/") + social.SocialBaseUrl + defaultName,
+		RedirectURL: strings.TrimSuffix(cfg.AppURL, "/") + SocialBaseUrl + defaultName,
 		Scopes:      info.Scopes,
 	}
 
@@ -197,9 +195,18 @@ func MustBool(value any, defaultValue bool) bool {
 	return result
 }
 
+// convertIniSectionToMap converts key value pairs from an ini section to a map[string]any
+func convertIniSectionToMap(sec *ini.Section) map[string]any {
+	mappedSettings := make(map[string]any)
+	for k, v := range sec.KeysHash() {
+		mappedSettings[k] = v
+	}
+	return mappedSettings
+}
+
 // CreateOAuthInfoFromKeyValues creates an OAuthInfo struct from a map[string]any using mapstructure
 // it puts all extra key values into OAuthInfo's Extra map
-func CreateOAuthInfoFromKeyValues(settingsKV map[string]any) (*social.OAuthInfo, error) {
+func CreateOAuthInfoFromKeyValues(settingsKV map[string]any) (*OAuthInfo, error) {
 	emptyStrToSliceDecodeHook := func(from reflect.Type, to reflect.Type, data any) (any, error) {
 		if from.Kind() == reflect.String && to.Kind() == reflect.Slice {
 			strData, ok := data.(string)
@@ -215,7 +222,7 @@ func CreateOAuthInfoFromKeyValues(settingsKV map[string]any) (*social.OAuthInfo,
 		return data, nil
 	}
 
-	var oauthInfo social.OAuthInfo
+	var oauthInfo OAuthInfo
 	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
 		DecodeHook:       emptyStrToSliceDecodeHook,
 		Result:           &oauthInfo,
@@ -236,10 +243,4 @@ func CreateOAuthInfoFromKeyValues(settingsKV map[string]any) (*social.OAuthInfo,
 	}
 
 	return &oauthInfo, err
-}
-
-func appendUniqueScope(config *oauth2.Config, scope string) {
-	if !slices.Contains(config.Scopes, social.OfflineAccessScope) {
-		config.Scopes = append(config.Scopes, social.OfflineAccessScope)
-	}
 }

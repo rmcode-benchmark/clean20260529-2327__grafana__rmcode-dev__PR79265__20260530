@@ -1,4 +1,4 @@
-package connectors
+package social
 
 import (
 	"context"
@@ -6,12 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/grafana/pkg/login/social"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
-	"github.com/grafana/grafana/pkg/services/ssosettings/ssosettingstests"
 	"github.com/grafana/grafana/pkg/setting"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -28,7 +25,8 @@ const (
 )
 
 func TestSocialGrafanaCom_UserInfo(t *testing.T) {
-	provider := NewGrafanaComProvider(social.NewOAuthInfo(), &setting.Cfg{}, &ssosettingstests.MockService{}, featuremgmt.WithFeatures())
+	provider, err := NewGrafanaComProvider(map[string]any{}, &setting.Cfg{}, featuremgmt.WithFeatures())
+	require.NoError(t, err)
 
 	type conf struct {
 		skipOrgRoleSync bool
@@ -38,14 +36,14 @@ func TestSocialGrafanaCom_UserInfo(t *testing.T) {
 		Name          string
 		Cfg           conf
 		userInfoResp  string
-		want          *social.BasicUserInfo
+		want          *BasicUserInfo
 		ExpectedError error
 	}{
 		{
 			Name:         "should return empty role as userInfo when Skip Org Role Sync Enabled",
 			userInfoResp: userResponse,
 			Cfg:          conf{skipOrgRoleSync: true},
-			want: &social.BasicUserInfo{
+			want: &BasicUserInfo{
 				Id:    "1",
 				Name:  "Eric Leijonmarck",
 				Email: "octocat@github.com",
@@ -57,7 +55,7 @@ func TestSocialGrafanaCom_UserInfo(t *testing.T) {
 			Name:         "should return role as userInfo when Skip Org Role Sync Enabled",
 			userInfoResp: userResponse,
 			Cfg:          conf{skipOrgRoleSync: false},
-			want: &social.BasicUserInfo{
+			want: &BasicUserInfo{
 				Id:    "1",
 				Name:  "Eric Leijonmarck",
 				Email: "octocat@github.com",
@@ -101,22 +99,20 @@ func TestSocialGrafanaCom_InitializeExtraFields(t *testing.T) {
 	}
 	testCases := []struct {
 		name     string
-		settings *social.OAuthInfo
+		settings map[string]any
 		want     settingFields
 	}{
 		{
 			name:     "allowedOrganizations is not set",
-			settings: social.NewOAuthInfo(),
+			settings: map[string]any{},
 			want: settingFields{
 				allowedOrganizations: []string{},
 			},
 		},
 		{
 			name: "allowedOrganizations is set",
-			settings: &social.OAuthInfo{
-				Extra: map[string]string{
-					"allowed_organizations": "uuid-1234,uuid-5678",
-				},
+			settings: map[string]any{
+				"allowed_organizations": "uuid-1234,uuid-5678",
 			},
 			want: settingFields{
 				allowedOrganizations: []string{"uuid-1234", "uuid-5678"},
@@ -126,7 +122,8 @@ func TestSocialGrafanaCom_InitializeExtraFields(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			s := NewGrafanaComProvider(tc.settings, &setting.Cfg{}, &ssosettingstests.MockService{}, featuremgmt.WithFeatures())
+			s, err := NewGrafanaComProvider(tc.settings, &setting.Cfg{}, featuremgmt.WithFeatures())
+			require.NoError(t, err)
 
 			require.Equal(t, tc.want.allowedOrganizations, s.allowedOrganizations)
 		})

@@ -1,4 +1,4 @@
-package connectors
+package social
 
 import (
 	"bytes"
@@ -15,25 +15,24 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/grafana/grafana/pkg/infra/remotecache"
-	"github.com/grafana/grafana/pkg/login/social"
 	"github.com/grafana/grafana/pkg/models/roletype"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
 	"github.com/grafana/grafana/pkg/services/org"
-	"github.com/grafana/grafana/pkg/services/ssosettings"
-	ssoModels "github.com/grafana/grafana/pkg/services/ssosettings/models"
 	"github.com/grafana/grafana/pkg/setting"
 	"github.com/grafana/grafana/pkg/util"
 )
 
-const forceUseGraphAPIKey = "force_use_graph_api" // #nosec G101 not a hardcoded credential
+const (
+	AzureADProviderName = "azuread"
+	forceUseGraphAPIKey = "force_use_graph_api" // #nosec G101 not a hardcoded credential
+)
 
 var (
 	ExtraAzureADSettingKeys = []string{forceUseGraphAPIKey, allowedOrganizationsKey}
-	errAzureADMissingGroups = &SocialError{"either the user does not have any group membership or the groups claim is missing from the token."}
+	errAzureADMissingGroups = &Error{"either the user does not have any group membership or the groups claim is missing from the token."}
 )
 
-var _ social.SocialConnector = (*SocialAzureAD)(nil)
-var _ ssosettings.Reloadable = (*SocialAzureAD)(nil)
+var _ SocialConnector = (*SocialAzureAD)(nil)
 
 type SocialAzureAD struct {
 	*SocialBase
@@ -73,10 +72,15 @@ type keySetJWKS struct {
 	jose.JSONWebKeySet
 }
 
-func NewAzureADProvider(info *social.OAuthInfo, cfg *setting.Cfg, ssoSettings ssosettings.Service, features *featuremgmt.FeatureManager, cache remotecache.CacheStorage) *SocialAzureAD {
-	config := createOAuthConfig(info, cfg, social.AzureADProviderName)
+func NewAzureADProvider(settings map[string]any, cfg *setting.Cfg, features *featuremgmt.FeatureManager, cache remotecache.CacheStorage) (*SocialAzureAD, error) {
+	info, err := CreateOAuthInfoFromKeyValues(settings)
+	if err != nil {
+		return nil, err
+	}
+
+	config := createOAuthConfig(info, cfg, AzureADProviderName)
 	provider := &SocialAzureAD{
-		SocialBase:           newSocialBase(social.AzureADProviderName, config, info, cfg.AutoAssignOrgRole, cfg.OAuthSkipOrgRoleUpdateSync, *features),
+		SocialBase:           newSocialBase(AzureADProviderName, config, info, cfg.AutoAssignOrgRole, cfg.OAuthSkipOrgRoleUpdateSync, *features),
 		cache:                cache,
 		allowedOrganizations: util.SplitString(info.Extra[allowedOrganizationsKey]),
 		forceUseGraphAPI:     MustBool(info.Extra[forceUseGraphAPIKey], false),
@@ -86,17 +90,13 @@ func NewAzureADProvider(info *social.OAuthInfo, cfg *setting.Cfg, ssoSettings ss
 	}
 
 	if info.UseRefreshToken && features.IsEnabledGlobally(featuremgmt.FlagAccessTokenExpirationCheck) {
-		appendUniqueScope(config, social.OfflineAccessScope)
+		appendUniqueScope(config, OfflineAccessScope)
 	}
 
-	if features.IsEnabledGlobally(featuremgmt.FlagSsoSettingsApi) {
-		ssoSettings.RegisterReloadable(social.AzureADProviderName, provider)
-	}
-
-	return provider
+	return provider, nil
 }
 
-func (s *SocialAzureAD) UserInfo(ctx context.Context, client *http.Client, token *oauth2.Token) (*social.BasicUserInfo, error) {
+func (s *SocialAzureAD) UserInfo(ctx context.Context, client *http.Client, token *oauth2.Token) (*BasicUserInfo, error) {
 	idToken := token.Extra("id_token")
 	if idToken == nil {
 		return nil, ErrIDTokenNotFound
@@ -155,7 +155,7 @@ func (s *SocialAzureAD) UserInfo(ctx context.Context, client *http.Client, token
 		s.log.Debug("AllowAssignGrafanaAdmin and skipOrgRoleSync are both set, Grafana Admin role will not be synced, consider setting one or the other")
 	}
 
-	return &social.BasicUserInfo{
+	return &BasicUserInfo{
 		Id:             claims.ID,
 		Name:           claims.Name,
 		Email:          email,
@@ -166,15 +166,7 @@ func (s *SocialAzureAD) UserInfo(ctx context.Context, client *http.Client, token
 	}, nil
 }
 
-func (s *SocialAzureAD) Validate(ctx context.Context, settings ssoModels.SSOSettings) error {
-	return nil
-}
-
-func (s *SocialAzureAD) Reload(ctx context.Context, settings ssoModels.SSOSettings) error {
-	return nil
-}
-
-func (s *SocialAzureAD) GetOAuthInfo() *social.OAuthInfo {
+func (s *SocialAzureAD) GetOAuthInfo() *OAuthInfo {
 	return s.info
 }
 
@@ -185,17 +177,17 @@ func (s *SocialAzureAD) validateClaims(ctx context.Context, client *http.Client,
 	}
 
 	if claims.OAuthVersion == "1.0" {
-		return nil, &SocialError{"AzureAD OAuth: version 1.0 is not supported. Please ensure the auth_url and token_url are set to the v2.0 endpoints."}
+		return nil, &Error{"AzureAD OAuth: version 1.0 is not supported. Please ensure the auth_url and token_url are set to the v2.0 endpoints."}
 	}
 
 	s.log.Debug("Validating audience", "audience", claims.Audience, "client_id", s.ClientID)
 	if claims.Audience != s.ClientID {
-		return nil, &SocialError{"AzureAD OAuth: audience mismatch"}
+		return nil, &Error{"AzureAD OAuth: audience mismatch"}
 	}
 
 	s.log.Debug("Validating tenant", "tenant", claims.TenantID, "allowed_tenants", s.allowedOrganizations)
 	if !s.isAllowedTenant(claims.TenantID) {
-		return nil, &SocialError{"AzureAD OAuth: tenant mismatch"}
+		return nil, &Error{"AzureAD OAuth: tenant mismatch"}
 	}
 	return claims, nil
 }
@@ -234,7 +226,7 @@ func (s *SocialAzureAD) validateIDTokenSignature(ctx context.Context, client *ht
 
 	s.log.Warn("AzureAD OAuth: signing key not found", "kid", keyID)
 
-	return nil, &SocialError{"AzureAD OAuth: signing key not found"}
+	return nil, &Error{"AzureAD OAuth: signing key not found"}
 }
 
 func (claims *azureClaims) extractEmail() string {
@@ -256,11 +248,11 @@ func (s *SocialAzureAD) extractRoleAndAdmin(claims *azureClaims) (org.RoleType, 
 		return s.defaultRole(), false, nil
 	}
 
-	roleOrder := []org.RoleType{social.RoleGrafanaAdmin, org.RoleAdmin, org.RoleEditor,
+	roleOrder := []org.RoleType{RoleGrafanaAdmin, org.RoleAdmin, org.RoleEditor,
 		org.RoleViewer, org.RoleNone}
 	for _, role := range roleOrder {
 		if found := hasRole(claims.Roles, role); found {
-			if role == social.RoleGrafanaAdmin {
+			if role == RoleGrafanaAdmin {
 				return org.RoleAdmin, true, nil
 			}
 

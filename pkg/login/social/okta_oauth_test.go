@@ -1,4 +1,4 @@
-package connectors
+package social
 
 import (
 	"context"
@@ -12,10 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 
-	"github.com/grafana/grafana/pkg/login/social"
 	"github.com/grafana/grafana/pkg/models/roletype"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
-	"github.com/grafana/grafana/pkg/services/ssosettings/ssosettingstests"
 	"github.com/grafana/grafana/pkg/setting"
 )
 
@@ -69,7 +67,7 @@ func TestSocialOkta_UserInfo(t *testing.T) {
 		},
 		{
 			name:                    "Should give grafanaAdmin role for specific GrafanaAdmin in the role assignement",
-			userRawJSON:             fmt.Sprintf(`{ "email": "okta-octopus@grafana.com", "role": "%s" }`, social.RoleGrafanaAdmin),
+			userRawJSON:             fmt.Sprintf(`{ "email": "okta-octopus@grafana.com", "role": "%s" }`, RoleGrafanaAdmin),
 			RoleAttributePath:       "role",
 			allowAssignGrafanaAdmin: true,
 			OAuth2Extra: map[string]any{
@@ -99,21 +97,20 @@ func TestSocialOkta_UserInfo(t *testing.T) {
 			}))
 			defer server.Close()
 
-			provider := NewOktaProvider(
-				&social.OAuthInfo{
-					ApiUrl:                  server.URL + "/user",
-					RoleAttributePath:       tt.RoleAttributePath,
-					AllowAssignGrafanaAdmin: tt.allowAssignGrafanaAdmin,
-					// TODO: use this setting when SkipOrgRoleSync has moved to OAuthInfo
-					// SkipOrgRoleSync:         tt.settingSkipOrgRoleSync,
+			provider, err := NewOktaProvider(
+				map[string]any{
+					"api_url":                    server.URL + "/user",
+					"role_attribute_path":        tt.RoleAttributePath,
+					"allow_assign_grafana_admin": tt.allowAssignGrafanaAdmin,
+					"skip_org_role_sync":         tt.settingSkipOrgRoleSync,
 				},
 				&setting.Cfg{
 					OktaSkipOrgRoleSync:        tt.settingSkipOrgRoleSync,
 					AutoAssignOrgRole:          tt.autoAssignOrgRole,
 					OAuthSkipOrgRoleUpdateSync: false,
 				},
-				&ssosettingstests.MockService{},
 				featuremgmt.WithFeatures())
+			require.NoError(t, err)
 
 			// create a oauth2 token with a id_token
 			staticToken := oauth2.Token{

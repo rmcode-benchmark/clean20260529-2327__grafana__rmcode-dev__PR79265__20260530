@@ -31,7 +31,6 @@ import (
 	"github.com/grafana/grafana/pkg/infra/usagestats/statscollector"
 	"github.com/grafana/grafana/pkg/infra/usagestats/validator"
 	"github.com/grafana/grafana/pkg/login/social"
-	"github.com/grafana/grafana/pkg/login/social/socialimpl"
 	"github.com/grafana/grafana/pkg/middleware/csrf"
 	"github.com/grafana/grafana/pkg/middleware/loggermw"
 	apiregistry "github.com/grafana/grafana/pkg/registry/apis"
@@ -257,9 +256,9 @@ var wireBasicSet = wire.NewSet(
 	testdatasource.ProvideService,
 	ldapapi.ProvideService,
 	opentsdb.ProvideService,
-	socialimpl.ProvideService,
+	social.ProvideService,
 	influxdb.ProvideService,
-	wire.Bind(new(social.Service), new(*socialimpl.SocialService)),
+	wire.Bind(new(social.Service), new(*social.SocialService)),
 	tempo.ProvideService,
 	loki.ProvideService,
 	graphite.ProvideService,

@@ -1,4 +1,4 @@
-package connectors
+package social
 
 import (
 	"context"
@@ -15,10 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 
-	"github.com/grafana/grafana/pkg/login/social"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
 	"github.com/grafana/grafana/pkg/services/org"
-	"github.com/grafana/grafana/pkg/services/ssosettings/ssosettingstests"
 	"github.com/grafana/grafana/pkg/setting"
 )
 
@@ -41,7 +39,8 @@ const (
 func TestSocialGitlab_UserInfo(t *testing.T) {
 	var nilPointer *bool
 
-	provider := NewGitLabProvider(&social.OAuthInfo{SkipOrgRoleSync: false}, &setting.Cfg{}, &ssosettingstests.MockService{}, featuremgmt.WithFeatures())
+	provider, err := NewGitLabProvider(map[string]any{"skip_org_role_sync": false}, &setting.Cfg{}, featuremgmt.WithFeatures())
+	require.NoError(t, err)
 
 	type conf struct {
 		AllowAssignGrafanaAdmin bool
@@ -347,23 +346,21 @@ func TestSocialGitlab_extractFromToken(t *testing.T) {
 			// Create a test client with a dummy token
 			client := oauth2.NewClient(context.Background(), &tokenSource{accessToken: "dummy_access_token"})
 
-			s := NewGitLabProvider(
-				&social.OAuthInfo{
-					AllowedDomains:      []string{},
-					AllowSignup:         false,
-					RoleAttributePath:   "",
-					RoleAttributeStrict: false,
-					// TODO: use this setting when SkipOrgRoleSync has moved to OAuthInfo
-					//SkipOrgRoleSync:     false,
-					AuthUrl:  tc.config.Endpoint.AuthURL,
-					TokenUrl: tc.config.Endpoint.TokenURL,
-				},
+			s, err := NewGitLabProvider(map[string]any{
+				"allowed_domains":       []string{},
+				"allow_sign_up":         false,
+				"role_attribute_path":   "",
+				"role_attribute_strict": false,
+				"skip_org_role_sync":    false,
+				"auth_url":              tc.config.Endpoint.AuthURL,
+				"token_url":             tc.config.Endpoint.TokenURL,
+			},
 				&setting.Cfg{
 					AutoAssignOrgRole:          "",
 					OAuthSkipOrgRoleUpdateSync: false,
-					GitLabSkipOrgRoleSync:      false,
-				}, &ssosettingstests.MockService{},
-				featuremgmt.WithFeatures())
+				}, featuremgmt.WithFeatures())
+
+			require.NoError(t, err)
 
 			// Test case: successful extraction
 			token := &oauth2.Token{}
@@ -453,7 +450,8 @@ func TestSocialGitlab_GetGroupsNextPage(t *testing.T) {
 	defer mockServer.Close()
 
 	// Create a SocialGitlab instance with the mock server URL
-	s := NewGitLabProvider(&social.OAuthInfo{ApiUrl: mockServer.URL}, &setting.Cfg{}, &ssosettingstests.MockService{}, featuremgmt.WithFeatures())
+	s, err := NewGitLabProvider(map[string]any{"api_url": mockServer.URL}, &setting.Cfg{}, featuremgmt.WithFeatures())
+	require.NoError(t, err)
 
 	// Call getGroups and verify that it returns all groups
 	expectedGroups := []string{"admins", "editors", "viewers", "serveradmins"}

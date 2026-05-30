@@ -1,4 +1,4 @@
-package connectors
+package social
 
 import (
 	"context"
@@ -8,20 +8,20 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/grafana/grafana/pkg/login/social"
 	"github.com/grafana/grafana/pkg/models/roletype"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
 	"github.com/grafana/grafana/pkg/services/org"
-	"github.com/grafana/grafana/pkg/services/ssosettings"
-	ssoModels "github.com/grafana/grafana/pkg/services/ssosettings/models"
 	"github.com/grafana/grafana/pkg/setting"
 	"github.com/grafana/grafana/pkg/util"
 )
 
-var ExtraGrafanaComSettingKeys = []string{allowedOrganizationsKey}
+const (
+	GrafanaComProviderName = "grafana_com"
+	// legacy/old settings for the provider
+	GrafanaNetProviderName = "grafananet"
+)
 
-var _ social.SocialConnector = (*SocialGrafanaCom)(nil)
-var _ ssosettings.Reloadable = (*SocialGrafanaCom)(nil)
+var ExtraGrafanaComSettingKeys = []string{allowedOrganizationsKey}
 
 type SocialGrafanaCom struct {
 	*SocialBase
@@ -34,15 +34,20 @@ type OrgRecord struct {
 	Login string `json:"login"`
 }
 
-func NewGrafanaComProvider(info *social.OAuthInfo, cfg *setting.Cfg, ssoSettings ssosettings.Service, features *featuremgmt.FeatureManager) *SocialGrafanaCom {
+func NewGrafanaComProvider(settings map[string]any, cfg *setting.Cfg, features *featuremgmt.FeatureManager) (*SocialGrafanaCom, error) {
+	info, err := CreateOAuthInfoFromKeyValues(settings)
+	if err != nil {
+		return nil, err
+	}
+
 	// Override necessary settings
 	info.AuthUrl = cfg.GrafanaComURL + "/oauth2/authorize"
 	info.TokenUrl = cfg.GrafanaComURL + "/api/oauth2/token"
 	info.AuthStyle = "inheader"
 
-	config := createOAuthConfig(info, cfg, social.GrafanaComProviderName)
+	config := createOAuthConfig(info, cfg, GrafanaComProviderName)
 	provider := &SocialGrafanaCom{
-		SocialBase:           newSocialBase(social.GrafanaComProviderName, config, info, cfg.AutoAssignOrgRole, cfg.OAuthSkipOrgRoleUpdateSync, *features),
+		SocialBase:           newSocialBase(GrafanaComProviderName, config, info, cfg.AutoAssignOrgRole, cfg.OAuthSkipOrgRoleUpdateSync, *features),
 		url:                  cfg.GrafanaComURL,
 		allowedOrganizations: util.SplitString(info.Extra[allowedOrganizationsKey]),
 		skipOrgRoleSync:      cfg.GrafanaComSkipOrgRoleSync,
@@ -50,19 +55,7 @@ func NewGrafanaComProvider(info *social.OAuthInfo, cfg *setting.Cfg, ssoSettings
 		// skipOrgRoleSync: info.SkipOrgRoleSync
 	}
 
-	if features.IsEnabledGlobally(featuremgmt.FlagSsoSettingsApi) {
-		ssoSettings.RegisterReloadable(social.GrafanaComProviderName, provider)
-	}
-
-	return provider
-}
-
-func (s *SocialGrafanaCom) Validate(ctx context.Context, settings ssoModels.SSOSettings) error {
-	return nil
-}
-
-func (s *SocialGrafanaCom) Reload(ctx context.Context, settings ssoModels.SSOSettings) error {
-	return nil
+	return provider, nil
 }
 
 func (s *SocialGrafanaCom) IsEmailAllowed(email string) bool {
@@ -86,7 +79,7 @@ func (s *SocialGrafanaCom) IsOrganizationMember(organizations []OrgRecord) bool 
 }
 
 // UserInfo is used for login credentials for the user
-func (s *SocialGrafanaCom) UserInfo(ctx context.Context, client *http.Client, _ *oauth2.Token) (*social.BasicUserInfo, error) {
+func (s *SocialGrafanaCom) UserInfo(ctx context.Context, client *http.Client, _ *oauth2.Token) (*BasicUserInfo, error) {
 	var data struct {
 		Id    int         `json:"id"`
 		Name  string      `json:"name"`
@@ -112,7 +105,7 @@ func (s *SocialGrafanaCom) UserInfo(ctx context.Context, client *http.Client, _ 
 	if !s.skipOrgRoleSync {
 		role = org.RoleType(data.Role)
 	}
-	userInfo := &social.BasicUserInfo{
+	userInfo := &BasicUserInfo{
 		Id:    fmt.Sprintf("%d", data.Id),
 		Name:  data.Name,
 		Login: data.Login,
@@ -129,6 +122,6 @@ func (s *SocialGrafanaCom) UserInfo(ctx context.Context, client *http.Client, _ 
 	return userInfo, nil
 }
 
-func (s *SocialGrafanaCom) GetOAuthInfo() *social.OAuthInfo {
+func (s *SocialGrafanaCom) GetOAuthInfo() *OAuthInfo {
 	return s.info
 }

@@ -1,4 +1,4 @@
-package socialimpl
+package social
 
 import (
 	"bytes"
@@ -9,7 +9,6 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/grafana/grafana/pkg/login/social"
 	"github.com/grafana/grafana/pkg/services/supportbundles"
 )
 
@@ -27,7 +26,7 @@ func (ss *SocialService) registerSupportBundleCollectors(bundleRegistry supportb
 	}
 }
 
-func (ss *SocialService) supportBundleCollectorFn(name string, sc social.SocialConnector) func(context.Context) (*supportbundles.SupportItem, error) {
+func (ss *SocialService) supportBundleCollectorFn(name string, sc SocialConnector) func(context.Context) (*supportbundles.SupportItem, error) {
 	return func(ctx context.Context) (*supportbundles.SupportItem, error) {
 		bWriter := bytes.NewBuffer(nil)
 
@@ -62,7 +61,7 @@ func (ss *SocialService) supportBundleCollectorFn(name string, sc social.SocialC
 	}
 }
 
-func (ss *SocialService) healthCheckSocialConnector(ctx context.Context, name string, oinfo *social.OAuthInfo, bWriter *bytes.Buffer) {
+func (ss *SocialService) healthCheckSocialConnector(ctx context.Context, name string, oinfo *OAuthInfo, bWriter *bytes.Buffer) {
 	bWriter.WriteString("## Health checks\n\n")
 	client, err := ss.GetOAuthHttpClient(name)
 	if err != nil {
